@@ -1,6 +1,5 @@
 
-import pkg_resources, platform, sys
+import importlib.metadata, platform, sys
 print(f"--- SYSTEM: {platform.node()} ---")
-print(f"Python: {sys.version.split()[0]}")
-packages = sorted([f"{i.key}=={i.version}" for i in pkg_resources.working_set])
+packages = sorted([f"{dist.metadata['Name']}=={dist.version}" for dist in importlib.metadata.distributions()])
 for p in packages: print(p)

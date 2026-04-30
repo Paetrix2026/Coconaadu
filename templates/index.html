@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sovereign Grid : Tactical NOC v5.5</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* TACTICAL PALETTE & TYPOGRAPHY */
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap');
+
+        :root {
+            --bg-deep: #050505;
+            --card-bg: #0d0d0d;
+            --neon-green: #7fff00;
+            --muted-border: #1a1a1a;
+            --text-main: #e0e0e0;
+            --text-dim: #666666;
+            --red-alert: #ff3e3e;
+            --panel-border: 1px solid var(--muted-border);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-deep);
+            color: var(--text-main);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* SIDEBAR CONFIGURATION */
+        .sidebar {
+            width: 320px;
+            background: #080808;
+            border-right: var(--panel-border);
+            display: flex;
+            flex-direction: column;
+            z-index: 20;
+            overflow-y: auto;
+        }
+
+        .security-panel {
+            padding: 24px;
+            background: #000;
+            border-bottom: var(--panel-border);
+        }
+
+        .sec-label {
+            font-size: 10px;
+            font-family: 'JetBrains Mono';
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            display: block;
+            margin-bottom: 12px;
+        }
+
+        .sec-input-group { display: flex; gap: 8px; }
+
+        .sec-input {
+            background: #111;
+            border: 1px solid #222;
+            color: var(--neon-green);
+            padding: 10px;
+            flex-grow: 1;
+            font-family: 'JetBrains Mono';
+            font-size: 12px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .sec-input:focus { border-color: var(--neon-green); }
+
+        .sec-btn {
+            background: var(--neon-green);
+            color: #000;
+            border: none;
+            padding: 0 15px;
+            cursor: pointer;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+        }
+
+        /* BENTO GRID LAYOUT */
+        .main-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        header {
+            height: 70px;
+            border-bottom: var(--panel-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            background: #080808;
+            flex-shrink: 0;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+            padding: 2rem;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        .bento-card {
+            background: var(--card-bg);
+            border: var(--panel-border);
+            padding: 1.5rem;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .bento-card.verified::before {
+            content: "";
+            position: absolute;
+            top: 0; right: 0;
+            width: 12px; height: 12px;
+            background: var(--neon-green);
+            clip-path: polygon(100% 0, 0 0, 100% 100%);
+        }
+
+        .card-label {
+            font-size: 10px;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono';
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 8px;
+        }
+
+        .big-stat {
+            font-size: 32px;
+            font-weight: 600;
+            color: var(--neon-green);
+        }
+
+        .device-item {
+            padding: 20px 24px;
+            border-bottom: 1px solid #111;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-left: 3px solid transparent;
+        }
+
+        .device-item.active { border-left-color: var(--neon-green); background: #111; }
+
+        #tab-terminal {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            background: #000;
+            color: var(--neon-green);
+            padding: 20px;
+            height: 100%;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+
+        #video-monitor, #swarm-monitor {
+            grid-column: span 8;
+            grid-row: span 2;
+            background: #000;
+            border: var(--panel-border);
+            position: relative;
+            display: none;
+        }
+
+        #remote-canvas, #swarm-canvas { width: 100%; height: 100%; object-fit: contain; }
+
+        #placeholder-text {
+            grid-column: span 8;
+            grid-row: span 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: var(--panel-border);
+            background: #080808;
+            color: #1a1a1a;
+            font-size: 48px;
+            font-weight: 800;
+        }
+
+        /* MODAL */
+        #modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 92%; height: 88%; background: #080808; border: 1px solid #222;
+            display: none; z-index: 100; flex-direction: row;
+        }
+
+        .tab-btn {
+            background: none; border: 1px solid #333; color: var(--text-dim);
+            padding: 8px 16px; font-family: 'JetBrains Mono'; font-size: 11px; cursor: pointer;
+        }
+
+        .tab-btn.active { background: var(--neon-green); color: #000; font-weight: bold; }
+
+        .tab-content { display: none; flex-grow: 1; overflow: hidden; flex-direction: column; }
+        .tab-content.active { display: flex; }
+
+        .toolbar {
+            width: 80px; border-left: var(--panel-border);
+            display: flex; flex-direction: column; align-items: center; padding: 32px 0; gap: 24px;
+        }
+
+        .tool-btn {
+            width: 48px; height: 48px; border: 1px solid #222; background: none;
+            color: var(--text-dim); border-radius: 4px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .tool-btn:hover { border-color: var(--neon-green); color: var(--neon-green); background: #111; }
+
+        .toast {
+            position: fixed; top: 20px; right: 20px; background: #000;
+            border: 1px solid var(--neon-green); color: var(--neon-green);
+            padding: 16px 24px; font-family: 'JetBrains Mono'; font-size: 12px; z-index: 1000;
+        }
+
+        #delegation-list > div {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #111;
+        }
+
+        /* SWARM UI ELEMENTS */
+        .swarm-active { border-color: var(--neon-green) !important; color: var(--neon-green) !important; }
+        #swarm-progress-bar { height: 2px; background: var(--neon-green); width: 0%; transition: width 0.3s; margin-top: 10px; }
+
+        /* DELEGATION FLASH */
+        #delegation-flash {
+            display: none;
+            margin-top: 10px;
+            padding: 10px 14px;
+            border: 1px solid var(--neon-green);
+            background: #001a00;
+            font-family: 'JetBrains Mono';
+            font-size: 11px;
+            line-height: 1.7;
+            animation: flashIn 0.3s ease;
+        }
+        @keyframes flashIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .deleg-node { color: var(--neon-green); font-weight: bold; font-size: 14px; }
+        .deleg-meta { color: #555; font-size: 10px; }
+
+        /* ANALYTICS PANE */
+        #analytics-pane {
+            grid-column: span 12;
+            background: var(--card-bg);
+            border: var(--panel-border);
+            padding: 1.2rem 1.5rem;
+        }
+        .analytics-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        #analytics-nodes {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+        #analytics-nodes::-webkit-scrollbar { height: 3px; }
+        #analytics-nodes::-webkit-scrollbar-thumb { background: #222; }
+        .analytics-node-card {
+            min-width: 200px;
+            border: 1px solid #1c1c1c;
+            padding: 12px 14px;
+            flex-shrink: 0;
+            position: relative;
+            transition: border-color 0.3s;
+        }
+        .analytics-node-card.verified { border-color: #1a2e1a; }
+        .analytics-node-card.verified::after {
+            content: "●";
+            position: absolute;
+            top: 8px; right: 10px;
+            color: var(--neon-green);
+            font-size: 8px;
+        }
+        .anc-name {
+            font-family: 'JetBrains Mono';
+            font-size: 10px;
+            font-weight: bold;
+            color: var(--text-main);
+            margin-bottom: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 160px;
+        }
+        .vital-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .vital-label {
+            font-family: 'JetBrains Mono';
+            font-size: 9px;
+            color: var(--text-dim);
+            width: 42px;
+            flex-shrink: 0;
+            text-transform: uppercase;
+        }
+        .vital-bar-track {
+            flex-grow: 1;
+            height: 3px;
+            background: #1a1a1a;
+            position: relative;
+        }
+        .vital-bar-fill {
+            height: 100%;
+            background: var(--neon-green);
+            transition: width 0.6s ease;
+            max-width: 100%;
+        }
+        .vital-bar-fill.warn  { background: #ffaa00; }
+        .vital-bar-fill.crit  { background: var(--red-alert); }
+        .vital-value {
+            font-family: 'JetBrains Mono';
+            font-size: 9px;
+            color: var(--text-dim);
+            width: 36px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .anc-latency {
+            margin-top: 8px;
+            font-family: 'JetBrains Mono';
+            font-size: 9px;
+            color: #444;
+            border-top: 1px solid #111;
+            padding-top: 7px;
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="security-panel">
+            <span class="sec-label">Sovereign_Auth</span>
+            <div class="sec-input-group">
+                <input type="password" id="session-key-input" class="sec-input" placeholder="Secret Key...">
+                <button onclick="lockGrid()" id="lock-btn" class="sec-btn"><i data-lucide="lock"></i></button>
+            </div>
+        </div>
+        <div style="padding: 24px; font-size: 10px; font-family: 'JetBrains Mono'; color: #444; border-bottom: 1px solid #111;">ACTIVE_EDGENODES</div>
+        <div id="device-list"></div>
+    </div>
+
+    <div class="main-container">
+        <header>
+            <div style="display: flex; align-items: center; gap: 20px;">
+                <h1 style="margin:0; font-size: 16px; font-family: 'JetBrains Mono'; letter-spacing: 2px;">SOVEREIGN_GRID // MASTER_CONSOLE</h1>
+                <button class="tool-btn" onclick="globalUpload()" title="Autonomous Task Orchestrator" style="width: 36px; height: 36px; border-color: var(--neon-green); color: var(--neon-green);">
+                    <i data-lucide="zap"></i>
+                </button>
+                <button id="swarm-toggle" class="tool-btn" onclick="toggleSwarmMode()" title="Swarm Mode: Parallel Processing" style="width: 36px; height: 36px;">
+                    <i data-lucide="layout-grid"></i>
+                </button>
+                <span id="swarm-indicator" style="display:none; font-family:'JetBrains Mono'; font-size:10px; color:var(--neon-green)">🐝 SWARM_ACTIVE</span>
+            </div>
+            <button style="background:var(--neon-green); color:#000; border:none; padding:8px 16px; font-family: 'JetBrains Mono'; font-weight:bold; cursor:pointer;" onclick="fetch('/deploy',{method:'POST'})">DEPLOY</button>
+        </header>
+
+        <div class="main-grid">
+            <div class="bento-card" style="grid-column: span 3;">
+                <span class="card-label">Active_Compute</span>
+                <div class="big-stat" id="total-nodes">00 <span style="font-size:14px; color:var(--text-dim)">Nodes</span></div>
+            </div>
+
+            <div class="bento-card" style="grid-column: span 5;">
+                <span class="card-label">Node_Rankings</span>
+                <div id="delegation-list" style="margin-top: 10px; font-family: 'JetBrains Mono'; font-size: 11px; max-height: 120px; overflow-y: auto;">
+                    <div style="color:var(--text-dim)">Awaiting telemetry...</div>
+                </div>
+            </div>
+
+            <div class="bento-card" style="grid-column: span 4;">
+                <span class="card-label">Global_Handshake</span>
+                <div class="big-stat" id="handshake-status" style="color: var(--text-dim);">IDLE</div>
+            </div>
+
+            <div id="video-monitor">
+                <div style="position:absolute; top:12px; left:12px; z-index:20; background:rgba(0,0,0,0.8); padding:4px 8px; font-size:10px; font-family:'JetBrains Mono';">🔴 LIVE_STREAM // ORIGIN: <b id="stream-origin">...</b></div>
+                <div style="position:absolute; top:12px; right:12px; z-index:20; color:var(--red-alert); cursor:pointer;" onclick="closeMonitor()"><i data-lucide="x-circle"></i></div>
+                <img id="remote-canvas" src="">
+            </div>
+
+            <div id="swarm-monitor">
+                <div style="position:absolute; top:12px; left:12px; z-index:20; background:rgba(0,0,0,0.8); padding:4px 8px; font-size:10px; font-family:'JetBrains Mono';">🐝 SWARM_RECONSTRUCTION // PROGRESS: <b id="swarm-progress">0%</b></div>
+                <div style="position:absolute; top:12px; right:12px; z-index:20; color:var(--red-alert); cursor:pointer;" onclick="closeSwarmMonitor()"><i data-lucide="x-circle"></i></div>
+                <canvas id="swarm-canvas"></canvas>
+                <div id="swarm-progress-bar"></div>
+            </div>
+
+            <div id="placeholder-text">GRID_OFFLINE</div>
+
+            <div class="bento-card" style="grid-column: span 4;">
+                <span class="card-label">Orchestration_Alerts</span>
+                <div id="system-alerts" style="font-size: 11px; color: #444; margin-top: 10px; font-family: 'JetBrains Mono'; line-height: 1.4;">Awaiting autonomous payload sequence...</div>
+                <div id="delegation-flash">
+                    <div class="deleg-meta">🤖 DELEGATOR // TASK ASSIGNED</div>
+                    <div class="deleg-node" id="deleg-node-name">—</div>
+                    <div class="deleg-meta" id="deleg-task-type"></div>
+                    <div class="deleg-meta" id="deleg-score"></div>
+                </div>
+            </div>
+
+            <!-- ANALYTICS PANE -->
+            <div id="analytics-pane">
+                <div class="analytics-header">
+                    <span class="card-label" style="margin:0">Live_Node_Vitals</span>
+                    <span style="font-family:'JetBrains Mono'; font-size:9px; color:#333" id="vitals-updated">--</span>
+                </div>
+                <div id="analytics-nodes">
+                    <div style="font-family:'JetBrains Mono'; font-size:11px; color:#333;">Waiting for node telemetry...</div>
+                </div>
+            </div>
+
+        <div id="modal">
+            <div style="flex-grow: 1; display: flex; flex-direction: column; padding: 32px; overflow: hidden;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+                    <h2 id="modal-title" style="margin:0; font-size: 18px; font-family: 'JetBrains Mono';">NODE_INSPECTOR</h2>
+                    <div style="display:flex; gap: 10px;">
+                        <button class="tab-btn active" id="btn-tab-terminal" onclick="switchTab('terminal')">TERMINAL</button>
+                        <button class="tab-btn" id="btn-tab-inventory" onclick="switchTab('inventory')">REGISTRY</button>
+                    </div>
+                </div>
+                <div id="tab-terminal" class="tab-content active"></div>
+                <div id="tab-inventory" class="tab-content">
+                    <input type="text" id="search-box" placeholder="Search packages..." onkeyup="filterInventory()" style="width:100%; background:#000; border:1px solid #222; color:var(--neon-green); padding:16px; margin-bottom:20px; font-family:'JetBrains Mono'; outline:none;">
+                    <div id="inventory-list"></div>
+                </div>
+            </div>
+            <div class="toolbar">
+                <button class="tool-btn" onclick="runNetCheck()"><i data-lucide="wifi"></i></button>
+                <button class="tool-btn" onclick="runInventory()"><i data-lucide="clipboard-list"></i></button>
+                <button class="tool-btn" onclick="triggerUpload()"><i data-lucide="file-up"></i></button>
+                <button class="tool-btn" onclick="startVideoStream()"><i data-lucide="video"></i></button>
+                <button class="tool-btn" style="margin-top:auto; color:var(--red-alert);" onclick="closeModal()"><i data-lucide="power"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let selectedNode = null;
+        let swarmMode = false;
+        let totalTiles = 0;
+        let completedTiles = 0;
+        
+        const nodeLogs = {};
+        const nodeInventory = {};
+
+        async function lockGrid() {
+            const key = document.getElementById('session-key-input').value;
+            if (!key) return;
+            const fd = new FormData(); fd.append("key", key);
+            await fetch('/set_session_key', { method: 'POST', body: fd });
+            document.getElementById('handshake-status').innerText = "ARMED";
+            document.getElementById('handshake-status').style.color = "var(--neon-green)";
+        }
+
+        // SWARM MODE CONTROL
+        async function toggleSwarmMode() {
+            swarmMode = !swarmMode;
+            const btn = document.getElementById('swarm-toggle');
+            const indicator = document.getElementById('swarm-indicator');
+            
+            btn.classList.toggle('swarm-active', swarmMode);
+            indicator.style.display = swarmMode ? 'block' : 'none';
+
+            const fd = new FormData();
+            fd.append("state", swarmMode);
+            await fetch('/toggle_swarm', { method: 'POST', body: fd });
+        }
+
+        // SWARM RECONSTRUCTION LOGIC
+        socket.on("swarm_init", (data) => {
+            const monitor = document.getElementById('swarm-monitor');
+            const canvas = document.getElementById('swarm-canvas');
+            const placeholder = document.getElementById('placeholder-text');
+            
+            monitor.style.display = 'block';
+            placeholder.style.display = 'none';
+            
+            canvas.width = data.width;
+            canvas.height = data.height;
+            totalTiles = data.total_tiles;
+            completedTiles = 0;
+            
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            updateSwarmProgress();
+        });
+
+        socket.on("tile_completed_ui", (data) => {
+            const canvas = document.getElementById('swarm-canvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            
+            img.onload = () => {
+                const tileW = canvas.width / 4; // Matches Brain's grid split (4x4)
+                const tileH = canvas.height / 4;
+                ctx.drawImage(img, data.col * tileW, data.row * tileH, tileW, tileH);
+                
+                completedTiles++;
+                updateSwarmProgress();
+            };
+            img.src = data.image_data;
+        });
+
+        function updateSwarmProgress() {
+            const percent = Math.round((completedTiles / totalTiles) * 100);
+            document.getElementById('swarm-progress').innerText = `${percent}%`;
+            document.getElementById('swarm-progress-bar').style.width = `${percent}%`;
+            
+            if (percent >= 100) {
+                document.getElementById('system-alerts').innerHTML = `<span style="color:var(--neon-green)">🐝 [SWARM_SUCCESS]: Image reconstruction finished across the grid.</span>`;
+            }
+        }
+
+        function globalUpload() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const fd = new FormData();
+                fd.append("file", file);
+                // Images always go through swarm pipeline — operation field always sent for images.
+                // swarmMode toggle only controls the UI indicator, not backend routing.
+                if (file.type.startsWith("image/")) fd.append("operation", "grayscale");
+
+                document.getElementById('system-alerts').innerHTML = `<span style="color:var(--neon-green)">🤖 [ORCHESTRATOR]: Initiating ${file.type.startsWith('image/') ? 'Swarm Parallelism' : 'Autonomous Delegation'}...</span>`;
+
+                fetch('/upload_script', { method: 'POST', body: fd });
+            };
+            input.click();
+        }
+
+        socket.on('notify_auth', (data) => {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `🛡️ [AUTH_SUCCESS]: ${data.name} Verified.`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        });
+
+        socket.on('node_stats_update', (data) => {
+            let item = document.getElementById('item-' + data.name);
+            if (!item) {
+                item = document.createElement('div');
+                item.id = 'item-' + data.name;
+                item.className = 'device-item';
+                item.onclick = () => selectNode(data.name);
+                document.getElementById('device-list').appendChild(item);
+                nodeLogs[data.name] = `> Initializing node connection...`;
+                document.getElementById('total-nodes').innerHTML = `${Object.keys(nodeLogs).length.toString().padStart(2, '0')} <span style="font-size:14px; color:var(--text-dim)">Nodes</span>`;
+            }
+            const statusColor = data.verified ? 'var(--neon-green)' : 'var(--red-alert)';
+            item.innerHTML = `<b>${data.name}</b><br><span style="font-size:9px; color:${statusColor}">CPU: ${data.cpu_usage}% | TASKS: ${data.active_tasks}</span>`;
+
+            let scoreRow = document.getElementById('score-' + data.name);
+            if (!scoreRow) {
+                scoreRow = document.createElement('div');
+                scoreRow.id = 'score-' + data.name;
+                document.getElementById('delegation-list').appendChild(scoreRow);
+            }
+            scoreRow.innerHTML = `
+                <span style="color:var(--neon-green)">${data.name}</span>
+                <span style="color:var(--text-dim)">REL: ${Math.round((data.reliability_score || 1) * 100)}%</span>
+                <span>CPU_FREE: ${Math.round(data.cpu_free || 0)}%</span>
+            `;
+
+            // --- ANALYTICS PANE UPDATE ---
+            updateAnalyticsCard(data);
+        });
+
+        function vitalBar(label, value, unit, warnAt, critAt) {
+            const pct = Math.min(100, Math.round(value));
+            const cls = pct >= critAt ? 'crit' : pct >= warnAt ? 'warn' : '';
+            return `<div class="vital-row">
+                <span class="vital-label">${label}</span>
+                <div class="vital-bar-track">
+                    <div class="vital-bar-fill ${cls}" style="width:${pct}%"></div>
+                </div>
+                <span class="vital-value">${Math.round(value)}${unit}</span>
+            </div>`;
+        }
+
+        function updateAnalyticsCard(data) {
+            const containerId = 'anc-' + data.name;
+            let card = document.getElementById(containerId);
+            const container = document.getElementById('analytics-nodes');
+
+            // Clear placeholder on first real node
+            const placeholder = container.querySelector('div:not(.analytics-node-card)');
+            if (placeholder) placeholder.remove();
+
+            if (!card) {
+                card = document.createElement('div');
+                card.id = containerId;
+                card.className = 'analytics-node-card';
+                container.appendChild(card);
+            }
+
+            card.className = 'analytics-node-card' + (data.verified ? ' verified' : '');
+
+            const cpuUsage  = data.cpu_usage  || 0;
+            const ramUsage  = data.ram_usage  || 0;
+            const gpuUsage  = data.gpu_usage  || 0;
+            const vram      = data.vram_available || 0;
+            const rel       = Math.round((data.reliability_score || 1) * 100);
+            const tasks     = data.active_tasks || 0;
+            // Latency is measured by the node via check_network; we show last known value
+            const latency   = data.last_latency_ms != null ? data.last_latency_ms.toFixed(1) + ' ms' : 'N/A';
+
+            card.innerHTML = `
+                <div class="anc-name" title="${data.name}">${data.name}</div>
+                ${vitalBar('CPU',  cpuUsage, '%',  70, 90)}
+                ${vitalBar('RAM',  ramUsage, '%',  75, 90)}
+                ${vitalBar('GPU',  gpuUsage, '%',  70, 90)}
+                <div class="vital-row">
+                    <span class="vital-label">VRAM</span>
+                    <div class="vital-bar-track"><div class="vital-bar-fill" style="width:${Math.min(100, vram/40)}%"></div></div>
+                    <span class="vital-value" style="width:52px">${vram > 1024 ? (vram/1024).toFixed(1)+'G' : vram+'M'}</span>
+                </div>
+                <div class="anc-latency">
+                    <span>LATENCY: <span style="color:${latency==='N/A'?'#333':'var(--neon-green)'}">${latency}</span></span>
+                    <span>TASKS: <span style="color:${tasks>0?'var(--neon-green)':'#333'}">${tasks}</span></span>
+                    <span>REL: <span style="color:${rel<80?'var(--red-alert)':'#666'}">${rel}%</span></span>
+                </div>`;
+
+            // Timestamp
+            const now = new Date();
+            document.getElementById('vitals-updated').textContent =
+                `UPDATED ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+        }
+
+        socket.on('dashboard_log', (data) => {
+            if (data.output.includes('🤖 [DELEGATOR]')) {
+                document.getElementById('system-alerts').innerHTML = `<span style="color: var(--neon-green)">${data.output}</span>`;
+
+                // Parse: "🤖 [DELEGATOR]: Detected=cpu -> Assigned to: NODENAME (Score: 42.1 | Optimal for cpu)"
+                const assignMatch = data.output.match(/Assigned to:\s*([^\s(]+)/);
+                const typeMatch   = data.output.match(/Detected=(\w+)/);
+                const scoreMatch  = data.output.match(/Score:\s*([\d.]+)/);
+
+                if (assignMatch) {
+                    const flash = document.getElementById('delegation-flash');
+                    document.getElementById('deleg-node-name').textContent = assignMatch[1];
+                    document.getElementById('deleg-task-type').textContent =
+                        typeMatch ? `TASK_TYPE: ${typeMatch[1].toUpperCase()}` : '';
+                    document.getElementById('deleg-score').textContent =
+                        scoreMatch ? `SCORE: ${scoreMatch[1]}` : '';
+
+                    flash.style.display = 'block';
+                    // Re-trigger animation
+                    flash.style.animation = 'none';
+                    flash.offsetHeight; // reflow
+                    flash.style.animation = 'flashIn 0.3s ease';
+                }
+            }
+
+            // Parse latency from check_network output and attach to node's analytics card
+            const latMatch = data.output.match(/Latency:\s*([\d.]+)ms/);
+            if (latMatch && data.node) {
+                const card = document.getElementById('anc-' + data.node);
+                if (card) {
+                    const latSpan = card.querySelector('.anc-latency span:first-child span');
+                    if (latSpan) {
+                        latSpan.style.color = 'var(--neon-green)';
+                        latSpan.textContent = latMatch[1] + ' ms';
+                    }
+                }
+            }
+
+            if (data.output.includes('--- SYSTEM:')) {
+                nodeInventory[data.node] = data.output;
+            } else {
+                nodeLogs[data.node] = (nodeLogs[data.node] || '') + `\n${data.output}`;
+            }
+            if (selectedNode === data.node) updateViews();
+        });
+
+        socket.on('ui_update_frame', (data) => {
+            document.getElementById('video-monitor').style.display = 'block';
+            document.getElementById('placeholder-text').style.display = 'none';
+            document.getElementById('stream-origin').innerText = data.node;
+            document.getElementById('remote-canvas').src = "data:image/jpeg;base64," + data.frame;
+        });
+
+        function selectNode(name) {
+            selectedNode = name;
+            document.querySelectorAll('.device-item').forEach(el => el.classList.remove('active'));
+            document.getElementById('item-' + name).classList.add('active');
+            document.getElementById('modal').style.display = 'flex';
+            document.getElementById('modal-title').innerText = `INSPECTOR // ${name}`;
+            updateViews();
+        }
+
+        function switchTab(type) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + type).classList.add('active');
+            document.getElementById('btn-tab-' + type).classList.add('active');
+        }
+
+        function updateViews() {
+            if (!selectedNode) return;
+            const terminal = document.getElementById('tab-terminal');
+            terminal.innerText = nodeLogs[selectedNode] || '';
+            terminal.scrollTop = terminal.scrollHeight;
+            document.getElementById('inventory-list').innerText = nodeInventory[selectedNode] || '';
+        }
+
+        function filterInventory() {
+            if (!selectedNode) return;
+            const q = document.getElementById('search-box').value.toLowerCase();
+            const source = nodeInventory[selectedNode] || '';
+            const filtered = source.split('\n').filter(l => l.toLowerCase().includes(q) || l.startsWith('---'));
+            document.getElementById('inventory-list').innerText = filtered.join('\n');
+        }
+
+        async function fetchPost(endpoint) {
+            if (!selectedNode) return;
+            const fd = new FormData(); fd.append("node_id", selectedNode);
+            await fetch(endpoint, { method: 'POST', body: fd });
+        }
+        function runNetCheck() { fetchPost('/check_network'); }
+        function runInventory() { fetchPost('/trigger_inventory'); }
+        function startVideoStream() { fetchPost('/start_video_process'); }
+        function triggerUpload() {
+            const input = document.createElement('input'); input.type = 'file';
+            input.onchange = e => {
+                const fd = new FormData(); fd.append("node_id", selectedNode); fd.append("file", e.target.files[0]);
+                fetch('/upload_script', { method: 'POST', body: fd });
+            };
+            input.click();
+        }
+        function closeModal() { document.getElementById('modal').style.display = 'none'; }
+        function closeMonitor() {
+            document.getElementById('video-monitor').style.display = 'none';
+            // FIX 6: Only restore placeholder if swarm monitor is also hidden
+            if (document.getElementById('swarm-monitor').style.display === 'none') {
+                document.getElementById('placeholder-text').style.display = 'flex';
+            }
+        }
+        function closeSwarmMonitor() {
+            document.getElementById('swarm-monitor').style.display = 'none';
+            // FIX 6: Only restore placeholder if video monitor is also hidden
+            if (document.getElementById('video-monitor').style.display === 'none') {
+                document.getElementById('placeholder-text').style.display = 'flex';
+            }
+        }
+        lucide.createIcons();
+    </script>
+</body>
+</html>
